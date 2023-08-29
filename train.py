@@ -10,8 +10,8 @@ from tensorboardX import SummaryWriter
 
 from models.preactresnet import PreActResNet18
 from models.resnet import *
+from models.densenet import densenet121
 
-from densenet import densenet121
 from config import args
 import dataloader_cifar 
 from utils import adjust_learning_rate, AverageMeter, ProgressMeter, save_checkpoint, accuracy, load_checkpoint, ThreeCropsTransform
