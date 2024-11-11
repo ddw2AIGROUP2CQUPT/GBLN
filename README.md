@@ -1,2 +1,2 @@
 # GBLN
-Multi-granularity Learning for Improving the Robustness of Deep Neural Models with Label Noise
+Granular-ball Representation Learning for Deep  CNN on Learning with Label Noise
