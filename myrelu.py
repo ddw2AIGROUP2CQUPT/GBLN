@@ -23,7 +23,8 @@ total_num_sample = 0
 
 def calculate_distances(center, p):
     return ((center - p) ** 2).sum(axis=0) ** 0.5
-save_pth = "%d_%s_%s_noise%.1f_pur(%.2f,%.2f)_bs%d_ratio%.2f_%s_GB-%s_%s" % (args.num,args.model,args.dataset,args.noisy_pro,args.purity,args.reclust_pur,args.BATCH_SIZE,args.retention_ratio,args.noisy_mode,args.GB_mode,args.noisy_mode)  # 定义保存路径名
+
+save_pth = "%d_%s_%s_noise%.1f_pur(%.2f,%.2f)_bata%.1f_gama%.1f_bs%d_ratio%.2f_%s_GB-%s" % (args.num,args.arch,args.dataset,args.r,args.purity,args.reclust_pur,args.bata,args.gama,args.batch_size,args.retention_ratio,args.noise_type,args.GB_mode)  # 定义保存路径名
 if not os.path.isdir(os.path.join('log',save_pth)):
     os.makedirs(os.path.join('log',save_pth))
 fw = open(os.path.join('log',save_pth,'g_ball.log'),'w')
@@ -72,7 +73,7 @@ class GBNR(torch.autograd.Function):
         sample_for_recluster = []
         index = 0               # 计数
         for ball in balls:      # 取出每个球里面的样本  array([球内样本数*[ball_label+样本特征64维]])
-            if args.noisy_pro != 0:      # 若噪声为0 则不需要删除单样本
+            if args.r != 0:      # 若噪声为0 则不需要删除单样本
                 if numbers[index] < 2 :  # 将所有单样本进行再次聚类 
                     for sample in ball:
                         sample_for_recluster.append(sample)
@@ -89,12 +90,12 @@ class GBNR(torch.autograd.Function):
         # fw_write("\ncurrent purity: {:.2%} first clustering has ball number: {} single ball number: {}".format(pur, len(balls), len(sample_for_recluster)))
         ######## 二次聚类单样本 纯度降低  
         re_pur = args.reclust_pur
-        if len(sample_for_recluster) != 0 and args.noisy_pro != 0:  # 没有单样本点 或者 噪声为0的时候不需要聚两次
-
+        if len(sample_for_recluster) != 0 and args.r != 0:  # 没有单样本点 或者 噪声为0的时候不需要聚两次
+            
             numbers, balls, result, _ = new_GBNR.main(torch.Tensor(np.array(sample_for_recluster)), re_pur)
             index = 0
             for ball in balls:
-                if args.noisy_pro != 0: 
+                if args.r != 0: 
                     if numbers[index] >= 2:      # 丢掉数量1的球  ---->有噪声才把单样本球丢弃
                         balls_qualified.append(ball)
                         numbers_qualified.append(numbers[index])
@@ -105,7 +106,17 @@ class GBNR(torch.autograd.Function):
                         numbers_qualified.append(numbers[index])
                         centers_qualified.append(result[index])
                 index += 1
-
+            # 在训练初期，特征提取器的参数还是随机时，保证有足够的样本能投入到训练中（考虑CNN模型会先拟合干净的样本）
+            index = 0
+            for ball in balls:
+                if args.r != 0 and len(balls_qualified) < self.batch_size*0.5:
+                    if numbers[index] == 1:
+                        balls_qualified.append(ball)
+                        numbers_qualified.append(numbers[index])
+                        centers_qualified.append(result[index])
+                else:
+                    break
+                index += 1
             # print("No.",re,"current re-purity: ", re_pur, "after re-clustering single ball number: ", len(sample_for_recluster))
             # fw_write("\ncurrent re-purity: {:.2%} after re-clustering single ball number: {}".format(re_pur,len(sample_for_recluster)))
 
@@ -173,12 +184,6 @@ class GBNR(torch.autograd.Function):
         ball_noise_percent_weight = ball_sample_noise / ballsample_total
         fw_write("\n该batch球样本噪声比例: {:.4%}\t, 带权球样本噪声比例: {:.4%}\t, 球样本噪声数:{:.1f}\t,  总球个数:{:.1f}\t".format(ball_noise_percent, ball_noise_percent_weight, ball_noise, len(centers_qualified)))
         ball_statistics(ball_noise,len(centers_qualified))
-        ######## 下面为利用粒球修改标签
-        # for m, i in enumerate(numbers_qualified):
-        #     if m < int(args.retention_ratio * len(numbers_qualified)):
-        #         for a in balls_qualified[m]:  # a.shape: [球内样本数, samplelabel+64样本向量]
-        #             self.nlabel[np.where((np.array(self.input) == a[1:]).all(axis=1))] = a[0]
-
         return torch.Tensor(data), torch.Tensor(target), torch.Tensor(self.nlabel)
         
 
@@ -208,3 +213,4 @@ class GBNR(torch.autograd.Function):
                 # dic.append(index_row)                               # 用每个球心向量的梯度去更新球内所有样本的的梯度
 
         return torch.Tensor(result)
+
